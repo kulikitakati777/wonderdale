@@ -1,17 +1,17 @@
 {
-  "name": "roblox-persistent-world-backend",
+  "name": "fufu-central",
   "version": "1.0.0",
-  "description": "Backend de mundo persistente para juego de Roblox: guarda regiones, objetos construidos y perfiles de jugador.",
+  "description": "Backend de FUFU Central para WhatsApp Cloud API",
   "main": "server.js",
-  "type": "commonjs",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
-    "@libsql/client": "^0.14.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2"
+    "express": "^5.1.0",
+    "axios": "^1.11.0",
+    "dotenv": "^17.2.0"
   }
 }
