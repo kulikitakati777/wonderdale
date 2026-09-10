@@ -1,151 +1,198 @@
-// server.js
-// API REST que consumen tus servidores de Roblox vía HttpService.
-// Ningún servidor de Roblox es "dueño" del mundo: todos leen y escriben aquí,
-// así que sin importar cuál se abra, todos ven el mismo estado.
-
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const db = require('./db');
+const express = require("express");
+const axios = require("axios");
+require("dotenv").config();
 
 const app = express();
-app.use(express.json({ limit: '2mb' }));
-app.use(cors());
+app.use(express.json());
 
-const API_KEY = process.env.API_KEY || 'n^!?UD>omCiza%zq';
 const PORT = process.env.PORT || 3000;
 
-// ------------------------------------------------------------------
-// Autenticación simple por API key.
-// Roblox manda el header "x-api-key". Sin esto, cualquiera con la URL
-// podría escribir/borrar en tu mundo.
-// ------------------------------------------------------------------
-app.use((req, res, next) => {
-  if (req.path === '/health') return next();
-  const key = req.header('x-api-key');
-  if (!key || key !== API_KEY) {
-    return res.status(401).json({ error: 'API key inválida o ausente' });
-  }
-  next();
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+const GRAPH_API_VERSION = process.env.GRAPH_API_VERSION || "v23.0";
+
+/*
+|--------------------------------------------------------------------------
+| Página principal
+|--------------------------------------------------------------------------
+*/
+
+app.get("/", (req, res) => {
+    res.send("🚗 FUFU Central está funcionando.");
 });
 
-app.get('/health', (req, res) => res.json({ ok: true }));
+/*
+|--------------------------------------------------------------------------
+| Verificación del webhook de Meta
+|--------------------------------------------------------------------------
+*/
 
-// ------------------------------------------------------------------
-// Regiones / objetos del mundo
-// ------------------------------------------------------------------
+app.get("/webhook", (req, res) => {
+    const mode = req.query["hub.mode"];
+    const token = req.query["hub.verify_token"];
+    const challenge = req.query["hub.challenge"];
 
-// Obtener todos los objetos de una región (para "streamear" el chunk)
-app.get('/region/:regionId/objects', async (req, res) => {
-  try {
-    const objects = await db.getRegionObjects(req.params.regionId);
-    res.json({ regionId: req.params.regionId, objects });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Error leyendo la región' });
-  }
-});
-
-// Crear o actualizar un objeto (colocar algo, moverlo, editar su contenido)
-app.post('/region/:regionId/objects', async (req, res) => {
-  try {
-    const body = req.body;
-    if (!body.objectId || !body.objectType || !body.position || !body.ownerUserId) {
-      return res.status(400).json({ error: 'Faltan campos: objectId, objectType, position, ownerUserId' });
-    }
-    const saved = await db.upsertObject({
-      objectId: body.objectId,
-      regionId: req.params.regionId,
-      ownerUserId: body.ownerUserId,
-      objectType: body.objectType,
-      position: body.position,
-      rotation: body.rotation || { x: 0, y: 0, z: 0 },
-      data: body.data || {},
-    });
-
-    if (body.logEvent) {
-      await db.logEvent(req.params.regionId, body.ownerUserId, 'object_placed', body.logEvent);
+    if (mode === "subscribe" && token === VERIFY_TOKEN) {
+        console.log("✅ Webhook verificado correctamente.");
+        return res.status(200).send(challenge);
     }
 
-    res.json({ object: saved });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Error guardando el objeto' });
-  }
+    console.log("❌ Error verificando webhook.");
+    return res.sendStatus(403);
 });
 
-// Borrar un objeto (romper la tienda de alguien, etc)
-app.delete('/region/:regionId/objects/:objectId', async (req, res) => {
-  try {
-    const deleted = await db.deleteObject(req.params.objectId);
-    res.json({ deleted });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Error borrando el objeto' });
-  }
+/*
+|--------------------------------------------------------------------------
+| Recibir mensajes de WhatsApp
+|--------------------------------------------------------------------------
+*/
+
+app.post("/webhook", async (req, res) => {
+    // Respondemos inmediatamente a Meta.
+    res.sendStatus(200);
+
+    try {
+        const entry = req.body.entry?.[0];
+        const change = entry?.changes?.[0];
+        const value = change?.value;
+        const message = value?.messages?.[0];
+
+        if (!message) {
+            return;
+        }
+
+        const numeroCliente = message.from;
+
+        console.log("📩 Mensaje recibido");
+        console.log("Cliente:", numeroCliente);
+        console.log("Tipo:", message.type);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Mensaje de texto
+        |--------------------------------------------------------------------------
+        */
+
+        if (message.type === "text") {
+            const texto = message.text?.body || "";
+
+            console.log("Mensaje:", texto);
+
+            await enviarMensaje(
+                numeroCliente,
+                `🚗 *FUFU Central*\n\nHola 👋\n\nRecibí tu mensaje:\n"${texto}"\n\n📍 Para solicitar un vehículo, envíame tu ubicación.`
+            );
+
+            return;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Ubicación
+        |--------------------------------------------------------------------------
+        */
+
+        if (message.type === "location") {
+            const latitude = message.location?.latitude;
+            const longitude = message.location?.longitude;
+
+            console.log("📍 Ubicación:", latitude, longitude);
+
+            await enviarMensaje(
+                numeroCliente,
+                `📍 *Ubicación recibida*\n\nPerfecto. Ahora dime a dónde quieres ir.`
+            );
+
+            return;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Audio
+        |--------------------------------------------------------------------------
+        */
+
+        if (message.type === "audio") {
+            console.log("🎙️ Audio recibido:", message.audio?.id);
+
+            await enviarMensaje(
+                numeroCliente,
+                "🎙️ Recibí tu audio. Próximamente FUFU Central podrá procesarlo automáticamente."
+            );
+
+            return;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Otros tipos
+        |--------------------------------------------------------------------------
+        */
+
+        await enviarMensaje(
+            numeroCliente,
+            "🚗 Recibí tu mensaje. Para solicitar un vehículo puedes enviarme tu ubicación 📍."
+        );
+
+    } catch (error) {
+        console.error(
+            "Error procesando webhook:",
+            error.response?.data || error.message
+        );
+    }
 });
 
-// Todos los objetos que le pertenecen a un jugador (útil para "mis construcciones")
-app.get('/player/:userId/objects', async (req, res) => {
-  try {
-    res.json({ objects: await db.getObjectsByOwner(req.params.userId) });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Error leyendo objetos del jugador' });
-  }
+/*
+|--------------------------------------------------------------------------
+| Enviar mensaje por WhatsApp
+|--------------------------------------------------------------------------
+*/
+
+async function enviarMensaje(numero, mensaje) {
+    try {
+        const url =
+            `https://graph.facebook.com/${GRAPH_API_VERSION}/${PHONE_NUMBER_ID}/messages`;
+
+        const response = await axios.post(
+            url,
+            {
+                messaging_product: "whatsapp",
+                recipient_type: "individual",
+                to: numero,
+                type: "text",
+                text: {
+                    preview_url: false,
+                    body: mensaje
+                }
+            },
+            {
+                headers: {
+                    Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+                    "Content-Type": "application/json"
+                }
+            }
+        );
+
+        console.log(
+            "✅ Mensaje enviado:",
+            response.data.messages?.[0]?.id
+        );
+
+    } catch (error) {
+        console.error(
+            "❌ Error enviando WhatsApp:",
+            error.response?.data || error.message
+        );
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
+| Iniciar servidor
+|--------------------------------------------------------------------------
+*/
+
+app.listen(PORT, () => {
+    console.log(`🚗 FUFU Central funcionando en puerto ${PORT}`);
 });
-
-// ------------------------------------------------------------------
-// Perfil de jugador
-// ------------------------------------------------------------------
-
-app.get('/player/:userId', async (req, res) => {
-  try {
-    const player = await db.getPlayer(req.params.userId);
-    if (!player) return res.json({ userId: req.params.userId, data: {}, isNew: true });
-    res.json({ ...player, isNew: false });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Error leyendo el jugador' });
-  }
-});
-
-app.post('/player/:userId', async (req, res) => {
-  try {
-    const { username, data } = req.body;
-    const saved = await db.savePlayer(req.params.userId, username, data || {});
-    res.json(saved);
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Error guardando el jugador' });
-  }
-});
-
-// ------------------------------------------------------------------
-// Eventos recientes (para tu idea de "crónica viva" del mundo)
-// ------------------------------------------------------------------
-
-app.get('/events', async (req, res) => {
-  try {
-    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
-    res.json({ events: await db.getRecentEvents(limit) });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Error leyendo eventos' });
-  }
-});
-
-// ------------------------------------------------------------------
-// Arranque: primero crea las tablas si no existen, luego levanta el server
-// ------------------------------------------------------------------
-
-db.initSchema()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Backend de mundo persistente escuchando en puerto ${PORT}`);
-    });
-  })
-  .catch((e) => {
-    console.error('No se pudo inicializar la base de datos:', e);
-    process.exit(1);
-  });
