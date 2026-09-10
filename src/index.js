@@ -8,7 +8,7 @@ export default {
       const token = url.searchParams.get("hub.verify_token");
       const challenge = url.searchParams.get("hub.challenge");
 
-      if (mode === "subscribe" && token === env.VERIFY_TOKEN) {
+      if (mode === "subscribe" && token === "fufu_webhook_2026") {
         console.log("Webhook verificado correctamente");
         return new Response(challenge, { status: 200 });
       }
