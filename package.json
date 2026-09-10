@@ -1,17 +1,11 @@
 {
   "name": "fufu-central",
   "version": "1.0.0",
-  "description": "Backend de FUFU Central para WhatsApp Cloud API",
-  "main": "server.js",
+  "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "deploy": "wrangler deploy"
   },
-  "engines": {
-    "node": ">=20"
-  },
-  "dependencies": {
-    "express": "^5.1.0",
-    "axios": "^1.11.0",
-    "dotenv": "^17.2.0"
+  "devDependencies": {
+    "wrangler": "^4.130.0"
   }
 }
